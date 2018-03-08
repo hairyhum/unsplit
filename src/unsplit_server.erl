@@ -233,7 +233,9 @@ new_strategy(same, S) ->
 new_strategy({M,F}, S) ->
     S#st{strategy = {M, F}};
 new_strategy(all_keys, S) ->
-    S#st{strategy = all_keys}.
+    S#st{strategy = all_keys};
+new_strategy(all_keys_both, S) ->
+    S#st{strategy = all_keys_both}.
 
 perform_actions(Actions, #st{table = Tab, remote = Remote} = S) ->
     local_perform_actions(Actions, Tab),
@@ -251,7 +253,23 @@ run_stitch(#st{table = Tab,
     Keys = mnesia:dirty_all_keys(Tab),
     lists:foldl(
       fun(K, Sx) ->
-              [_] = A = mnesia:read({Tab,K}),  % assert that A is non-empty
+              [_|_] = A = mnesia:read({Tab,K}),  % assert that A is non-empty
+              B = get_remote_obj(Remote, Tab, K),
+              if A == B ->
+                      Sx;
+                 true ->
+                      check_return(M:F([{A, B}], MSt), Sx)
+              end
+      end, St, Keys);
+run_stitch(#st{table = Tab,
+               module = M, function = F, modstate = MSt,
+               strategy = all_keys_both, remote = Remote} = St) ->
+    KeysLocal = mnesia:dirty_all_keys(Tab),
+    KeysRemote = rpc:call(Remote, mnesia, dirty_all_keys, [Tab]),
+    Keys = lists:umerge(lists:usort(KeysLocal), lists:usort(KeysRemote)),
+    lists:foldl(
+      fun(K, Sx) ->
+              A = mnesia:read({Tab,K}),
               B = get_remote_obj(Remote, Tab, K),
               if A == B ->
                       Sx;
@@ -259,6 +277,7 @@ run_stitch(#st{table = Tab,
                       check_return(M:F([{A, B}], MSt), Sx)
               end
       end, St, Keys).
+
 
 get_remote_obj(Remote, Tab, Key) ->
     ask_remote(Remote, {get_obj, Tab, Key}).

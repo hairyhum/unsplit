@@ -196,6 +196,11 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
     io:fwrite("do_stitch(~p, ~p).~n", [TM,Remote]),
     HasCopy = lists:member(Remote, Ns),
     io:fwrite("~p has a copy of ~p? -> ~p~n", [Remote, Tab, HasCopy]),
+    case HasCopy of
+        false ->
+            io:fwrite("Skipping table ~p", [Tab]);
+        true ->
+            io:fwrite("Merging table ~p", [Tab]),
     Attrs = mnesia:table_info(Tab, attributes),
     S0 = #st{module = M, function = F, extra_args = XArgs,
              table = Tab, attributes = Attrs,
@@ -208,6 +213,7 @@ do_stitch({Tab, Ns, {M, F, XArgs}} = TM, Remote) ->
     catch
         throw:?DONE ->
             ok
+    end
     end.
 
 -spec check_return(unsplit:merge_ret(), #st{}) -> #st{}.

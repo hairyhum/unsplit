@@ -27,7 +27,7 @@
 
 %% API
 -export([start_link/0]).
--export([remote_handle_query/1]).
+-export([remote_handle_query/1, handle_inconsistency/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -102,21 +102,24 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({mnesia_system_event, 
+handle_info({mnesia_system_event,
              {inconsistent_database, Context, Node}}, State) ->
     io:fwrite("inconsistency. Context = ~p; Node = ~p~n", [Context, Node]),
+    % handle_inconsistency(Node),
+    {noreply, State};
+handle_info(_Info, State) ->
+    io:fwrite("Got event: ~p~n", [_Info]),
+    {noreply, State}.
+
+
+handle_inconsistency(Node) ->
     Res = global:trans(
             {?LOCK, self()},
             fun() ->
                     io:fwrite("have lock...~n", []),
                     stitch_together(node(), Node)
             end),
-    io:fwrite("Res = ~p~n", [Res]),
-    {noreply, State};
-handle_info(_Info, State) ->
-    io:fwrite("Got event: ~p~n", [_Info]),
-    {noreply, State}.
-
+    io:fwrite("Res = ~p~n", [Res]).
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
 %% Description: This function is called by a gen_server when it is about to
@@ -253,7 +256,7 @@ run_stitch(#st{table = Tab,
 	       strategy = {Ms,Fs}, remote = Remote} = St) ->
     {ok, Objs, MSt1} = Ms:Fs(Tab, Remote, MSt),
     run_stitch(check_return(M:F(Objs, MSt1), St));
-run_stitch(#st{table = Tab, 
+run_stitch(#st{table = Tab,
                module = M, function = F, modstate = MSt,
                strategy = all_keys, remote = Remote} = St) ->
     Keys = mnesia:dirty_all_keys(Tab),
@@ -334,8 +337,8 @@ affected_tables(IslandA, IslandB) ->
                         [mnesia:table_info(T, C) ||
 			    C <- backend_types()]),
               io:fwrite("nodes_of(~p) = ~p~n", [T, Nodes]),
-              case {intersection(IslandA, Nodes), 
-                    intersection(IslandB, Nodes)} of 
+              case {intersection(IslandA, Nodes),
+                    intersection(IslandB, Nodes)} of
                   {[_|_], [_|_]} ->
                       [{T, Nodes}|Acc];
                   _ ->
